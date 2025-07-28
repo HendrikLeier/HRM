@@ -450,4 +450,6 @@ def launch(hydra_config: DictConfig):
 
 
 if __name__ == "__main__":
+    import os
+    print(f"CWD: {os.getcwd()}")
     launch()
