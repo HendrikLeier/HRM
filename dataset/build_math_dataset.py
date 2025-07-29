@@ -2,7 +2,7 @@ import numpy as np
 import os
 import json
 
-from random import randint
+from random import randint, choice
 from typing import Optional
 from argdantic import ArgParser
 from pydantic import BaseModel
@@ -77,18 +77,26 @@ def generate_dataset(set_name: str, config: DataProcessConfig):
     puzzle_id = 0
     example_id = 0
     
-    max_sequence_length = 3 * config.num_digits + 5  # Maximum length of the input/output sequencs
+    max_sequence_length = 2 * config.num_digits + 2 * config.num_digits + 5  # Maximum length of the input/output sequencs
     
     for _ in range(config.num_samples):
         # Generate a simple math problem
         a = randint(0, 10**config.num_digits - 1)
         b = randint(0, 10**config.num_digits - 1)
-        operation = '+' if randint(0, 1) == 0 else '-'
         
-        if operation == '+':
-            result = a + b
-        else:
-            result = a - b
+        operators = ["+", "-", "*"]
+        
+        operation = choice(operators)
+        
+        match operation:
+            case "+":
+                result = a + b
+            case "-":
+                result = a - b
+            case "*":
+                result = a * b
+            case _:
+                raise ValueError(f"Cannot interpret operator '{operation}'")
         
         # Format the problem and solution
         problem = f"{a}{operation}{b}="
