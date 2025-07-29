@@ -4,6 +4,10 @@ import os
 import math
 import yaml
 import shutil
+from pprint import pprint
+from typing import Any, Mapping
+
+import numpy as np
 
 import torch
 import torch.distributed as dist
@@ -21,7 +25,7 @@ from adam_atan2 import AdamATan2
 from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMetadata
 from utils.functions import load_model_class, get_model_source_path
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
-
+from utils.debug_math import predictions_to_string
 
 class LossConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra='allow')
@@ -104,6 +108,37 @@ def create_dataloader(config: PretrainConfig, split: str, rank: int, world_size:
     )
     return dataloader, dataset.metadata
 
+def log_metrics(
+    metrics: Mapping[Any, Any],
+    mode: str,
+    epoch: int,
+    step: int,
+    width: int = 1
+) -> None:
+    """
+    Log training or evaluation metrics with context.
+
+    Args:
+        metrics: dict of metric names to values (may include np.floating).
+        mode: 'train' or 'eval'.
+        epoch: current epoch number (0‑indexed or 1‑indexed as you prefer).
+        step: current step within the epoch.
+        width: pprint line‑width (default=1 for one item per line).
+    """
+    # Clean numpy floats
+    cleaned = {
+        k: float(v) if isinstance(v, np.floating) else v
+        for k, v in metrics.items()
+    }
+
+    # Header
+    header = f"[{mode.upper()}] Epoch: {epoch}  Step: {step}"
+    print(header)
+    print("-" * len(header))
+
+    # Pretty‑print metrics
+    pprint(cleaned, width=width)
+    print()  # blank line for readability
 
 def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, world_size: int):
     model_cfg = dict(
@@ -220,7 +255,13 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
             train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
 
     # Forward
-    train_state.carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+    train_state.carry, loss, metrics, preds, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=config.eval_save_outputs)
+    
+    if "logits" in preds and train_state.step % 100 == 0:
+        logits = preds["logits"]
+        eval_as_string = predictions_to_string(logits.cpu().float().numpy())
+        print(f"Eval predictions (step {train_state.step}): {eval_as_string}")
+        print(f"Train metrics: {metrics}")
 
     ((1 / global_batch_size) * loss).backward()
 
@@ -310,6 +351,12 @@ def evaluate(config: PretrainConfig, train_state: TrainState, eval_loader: torch
 
             os.makedirs(config.checkpoint_path, exist_ok=True)
             torch.save(all_preds, os.path.join(config.checkpoint_path, f"step_{train_state.step}_all_preds.{rank}"))
+            
+            # Print some examples
+            if "logits" in all_preds:
+                logits = all_preds["logits"]
+                eval_as_string = predictions_to_string(logits.float().numpy())
+                print(f"Eval predictions (step {train_state.step}): {eval_as_string}")  # Print first 10 examples
 
         # Logging
         # Reduce to rank 0
@@ -437,6 +484,7 @@ def launch(hydra_config: DictConfig):
         metrics = evaluate(config, train_state, eval_loader, eval_metadata, rank=RANK, world_size=WORLD_SIZE)
 
         if RANK == 0 and metrics is not None:
+            print(f"[Rank {RANK}]: Eval metrics: {metrics}")
             wandb.log(metrics, step=train_state.step)
             
         ############ Checkpointing

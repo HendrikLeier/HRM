@@ -9,6 +9,12 @@
             "console": "integratedTerminal"
         },
         {
+            "name": " debug maze dataset",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "dataset/build_maze_dataset.py",
+        },
+        {
             "name": "Debug: Sudoku Single GPU",
             "type": "debugpy",
             "request": "launch",
@@ -38,6 +44,26 @@
                 "epochs=20000",
                 "eval_interval=2000",
                 "lr=1e-4",
+                "puzzle_emb_lr=1e-4",
+                "weight_decay=1.0",
+                "puzzle_emb_weight_decay=1.0"
+            ],
+            "env": {
+                "OMP_NUM_THREADS": "1",
+                "DISABLE_COMPILE": "true"
+            }
+        },
+        {
+            "name": "Debug: Math Single GPU",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "pretrain.py",
+            "args": [
+                "data_path=data/math-100-simple",
+                "epochs=20000",
+                "eval_interval=1",
+                "lr=1e-4",
+                "global_batch_size=100",
                 "puzzle_emb_lr=1e-4",
                 "weight_decay=1.0",
                 "puzzle_emb_weight_decay=1.0"
