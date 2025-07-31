@@ -34,6 +34,21 @@
                 "DISABLE_COMPILE": "true"
             }
         },
+         {
+            "name": "Debug: Inference",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "inference.py",
+            "args": [
+                "vocab_size=16",
+                "seq_len=21",
+                "num_puzzle_identifiers=1"
+            ],
+            "env": {
+                "OMP_NUM_THREADS": "1",
+                "DISABLE_COMPILE": "true"
+            }
+        },
         {
             "name": "Debug: Maze Single GPU",
             "type": "debugpy",

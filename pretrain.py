@@ -26,18 +26,7 @@ from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMeta
 from utils.functions import load_model_class, get_model_source_path
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
 from utils.debug_math import predictions_to_string
-
-class LossConfig(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='allow')
-    
-    name: str
-
-
-class ArchConfig(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra='allow')
-
-    name: str
-    loss: LossConfig
+from shared import create_dataloader, ArchConfig, ModelConfig, create_model_wo_optimizers
 
 
 class PretrainConfig(pydantic.BaseModel):
@@ -72,6 +61,7 @@ class PretrainConfig(pydantic.BaseModel):
     checkpoint_every_eval: bool = False
     eval_interval: Optional[int] = None
     eval_save_outputs: List[str] = []
+    
 
 
 @dataclass
@@ -85,7 +75,7 @@ class TrainState:
     total_steps: int
 
 
-def create_dataloader(config: PretrainConfig, split: str, rank: int, world_size: int, **kwargs):
+def _create_dataloader(config: PretrainConfig, split: str, rank: int, world_size: int, **kwargs):
     dataset = PuzzleDataset(PuzzleDatasetConfig(
         seed=config.seed,
 
@@ -141,6 +131,7 @@ def log_metrics(
     print()  # blank line for readability
 
 def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, world_size: int):
+    """
     model_cfg = dict(
         **config.arch.__pydantic_extra__,  # type: ignore
 
@@ -167,11 +158,24 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
             with torch.no_grad():
                 for param in list(model.parameters()) + list(model.buffers()):
                     dist.broadcast(param, src=0)
+    """
+    model_config = ModelConfig(
+        arch=config.arch,
+        batch_size=config.global_batch_size // world_size,
+
+        vocab_size=train_metadata.vocab_size,
+        seq_len=train_metadata.seq_len,
+        num_puzzle_identifiers=train_metadata.num_puzzle_identifiers,
+        causal=False, # Non-autoregressive
+        device_type="cuda"
+    )
+    
+    model_with_loss_head = create_model_wo_optimizers(model_config, world_size=world_size)
 
     # Optimizers and lr
     optimizers = [
         CastedSparseEmbeddingSignSGD_Distributed(
-            model.model.puzzle_emb.buffers(),  # type: ignore
+            model_with_loss_head.model.puzzle_emb.buffers(),  # type: ignore
             
             lr=0,  # Needs to be set by scheduler
             weight_decay=config.puzzle_emb_weight_decay,
@@ -179,7 +183,7 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
             world_size=world_size
         ),
         AdamATan2(
-            model.parameters(),
+            model_with_loss_head.parameters(),
 
             lr=0,  # Needs to be set by scheduler
             weight_decay=config.weight_decay,
@@ -191,7 +195,7 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
         config.lr
     ]
 
-    return model, optimizers, optimizer_lrs
+    return model_with_loss_head, optimizers, optimizer_lrs
 
 
 def cosine_schedule_with_warmup_lr_lambda(
@@ -450,9 +454,25 @@ def launch(hydra_config: DictConfig):
     total_iters = config.epochs // train_epochs_per_iter
 
     assert config.epochs % train_epochs_per_iter == 0, "Eval interval must be a divisor of total epochs."
+    
+    """
+    PuzzleDatasetConfig(
+        seed=config.seed,
 
-    train_loader, train_metadata = create_dataloader(config, "train", test_set_mode=False, epochs_per_iter=train_epochs_per_iter, global_batch_size=config.global_batch_size, rank=RANK, world_size=WORLD_SIZE)
-    eval_loader,  eval_metadata  = create_dataloader(config, "test", test_set_mode=True, epochs_per_iter=1, global_batch_size=config.global_batch_size, rank=RANK, world_size=WORLD_SIZE)
+        dataset_path=config.data_path,
+
+        rank=rank,
+        num_replicas=world_size,
+        
+        **kwargs
+    )
+    """
+    
+    train_puzzle_config = PuzzleDatasetConfig(seed=config.seed, global_batch_size=config.global_batch_size, dataset_path=config.data_path, epochs_per_iter=train_epochs_per_iter, rank=RANK, num_replicas=WORLD_SIZE, test_set_mode=False)
+    test_puzzle_config = PuzzleDatasetConfig(seed=config.seed, global_batch_size=config.global_batch_size, dataset_path=config.data_path, epochs_per_iter=1, rank=RANK, num_replicas=WORLD_SIZE, test_set_mode=True)
+
+    train_loader, train_metadata = create_dataloader(train_puzzle_config, "train")
+    eval_loader,  eval_metadata  = create_dataloader(test_puzzle_config, "test")
 
     # Train state
     train_state = init_train_state(config, train_metadata, world_size=WORLD_SIZE)
