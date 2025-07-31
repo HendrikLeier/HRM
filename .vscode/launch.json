@@ -40,9 +40,10 @@
             "request": "launch",
             "program": "inference.py",
             "args": [
-                "vocab_size=16",
-                "seq_len=21",
-                "num_puzzle_identifiers=1"
+                "+dataset_path=data/maze-30x30-hard-1k",
+                "+vocab_size=16",
+                "+seq_len=21",
+                "+num_puzzle_identifiers=1"
             ],
             "env": {
                 "OMP_NUM_THREADS": "1",

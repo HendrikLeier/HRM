@@ -62,7 +62,7 @@ class PretrainConfig(pydantic.BaseModel):
     eval_interval: Optional[int] = None
     eval_save_outputs: List[str] = []
     
-
+    use_torch_attn: bool = False
 
 @dataclass
 class TrainState:
@@ -167,7 +167,8 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
         seq_len=train_metadata.seq_len,
         num_puzzle_identifiers=train_metadata.num_puzzle_identifiers,
         causal=False, # Non-autoregressive
-        device_type="cuda"
+        device_type="cuda",
+        use_torch_attn=config.use_torch_attn
     )
     
     model_with_loss_head = create_model_wo_optimizers(model_config, world_size=world_size)

@@ -94,9 +94,19 @@ class RotaryEmbedding(nn.Module):
     def forward(self):
         return self.cos_cached, self.sin_cached
 
+# For CPU compatibility
+def torch_flash_attn_permute(t: torch.Tensor) -> torch.Tensor:
+    """
+    Shuffle dimensions to convert between pytorch and flash_attn input and output format
+    
+    Input format B * X1 * X2 * D
+    Output format: B * X2 * X1 * D
+    """
+    return t.permute(0, 2, 1, 3)
+
 
 class Attention(nn.Module):
-    def __init__(self, hidden_size, head_dim, num_heads, num_key_value_heads, causal=False):
+    def __init__(self, hidden_size, head_dim, num_heads, num_key_value_heads, causal=False, torch_attn=False):
         super().__init__()
 
         self.hidden_size = hidden_size
@@ -105,6 +115,7 @@ class Attention(nn.Module):
         self.num_heads = num_heads
         self.num_key_value_heads = num_key_value_heads
         self.causal = causal
+        self.torch_attn = torch_attn
 
         self.qkv_proj = CastedLinear(self.hidden_size, (self.num_heads + 2 * self.num_key_value_heads) * self.head_dim, bias=False)
         self.o_proj = CastedLinear(self.output_size, self.hidden_size, bias=False)
@@ -126,10 +137,20 @@ class Attention(nn.Module):
             cos, sin = cos_sin
             query, key = apply_rotary_pos_emb(query, key, cos, sin)
 
-        # flash attn
-        attn_output = flash_attn_func(q=query, k=key, v=value, causal=self.causal)
-        if isinstance(attn_output, tuple):  # fa2 and fa3 compatibility
-            attn_output = attn_output[0]
+        if not self.torch_attn:
+            # flash attn
+            attn_output = flash_attn_func(q=query, k=key, v=value, causal=self.causal)
+            if isinstance(attn_output, tuple):  # fa2 and fa3 compatibility
+                attn_output = attn_output[0]
+        else:
+            # Slower Torch attn (but it is CPU compatible)
+            q_torch = torch_flash_attn_permute(q) # type: ignore
+            k_torch = torch_flash_attn_permute(k) # type: ignore
+            v_torch = torch_flash_attn_permute(v) # type: ignore
+            
+            torch_output = F.scaled_dot_product_attention(query=q_torch, key=k_torch, value=v_torch)
+            
+            attn_output = torch_flash_attn_permute(torch_output)
 
         # attn_output: [batch_size, num_heads, seq_len, head_dim]
         attn_output = attn_output.view(batch_size, seq_len, self.output_size)  # type: ignore

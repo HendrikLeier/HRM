@@ -46,6 +46,7 @@ class ModelConfig(pydantic.BaseModel):
     num_puzzle_identifiers: int
     causal: bool
     device_type: DeviceSelector
+    use_torch_attn: bool
 
 def create_dataloader(config: PuzzleDatasetConfig, split: str):
     dataset = PuzzleDataset(config=config, split=split)

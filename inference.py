@@ -6,7 +6,8 @@ Thus this file implements a hardware agnostic inference method. It is based on t
 import os
 
 from typing import Optional, Dict, Tuple, Any
-from shared import ModelConfig, ArchConfig, DeviceSelector, create_model_wo_optimizers
+from shared import ModelConfig, ArchConfig, DeviceSelector, create_model_wo_optimizers, create_dataloader
+from puzzle_dataset import PuzzleDatasetConfig
 import torch.nn as nn
 import torch
 import pydantic
@@ -27,7 +28,7 @@ def init_model_for_inference(
     if checkpoint:
         checkpoint_file = os.path.join(checkpoint.checkpoint_path, f"step_{checkpoint.checkpoint_step}")
         checkpoint_obj = torch.load(checkpoint_file, map_location=model_config.device_type)
-        model.load_state_dict(checkpoint_obj)
+        model.load_state_dict(checkpoint_obj, assign=True)
     
     return model
 
@@ -67,6 +68,7 @@ class InferenceConfig(pydantic.BaseModel):
     causal: bool = False
     device_type: DeviceSelector = "cpu"
     checkpoint_path: Optional[str] = None
+    use_torch_attn: bool = True
 
 @hydra.main(config_path="config", config_name="cfg_pretrain", version_base=None)
 def launch(hydra_config: DictConfig):
@@ -82,10 +84,24 @@ def launch(hydra_config: DictConfig):
         seq_len=inference_config.seq_len,
         num_puzzle_identifiers=inference_config.num_puzzle_identifiers,
         causal=inference_config.causal,
-        device_type=inference_config.device_type
+        device_type=inference_config.device_type,
+        use_torch_attn=inference_config.use_torch_attn
     ) # type: ignore
     
     model = init_model_for_inference(model_cfg, checkpoint=None)
+    
+    dataset_config = PuzzleDatasetConfig(
+        seed=1,
+        test_set_mode=True,
+        epochs_per_iter=1,
+        rank=RANK,
+        num_replicas=WORLD_SIZE,
+        **hydra_config # type: ignore
+    ) 
+    
+    eval_loader,  eval_metadata  = create_dataloader(dataset_config, "test")
+    
+    print()
 
 if __name__ == "__main__":
     launch()

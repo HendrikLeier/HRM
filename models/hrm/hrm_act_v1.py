@@ -55,7 +55,9 @@ class HierarchicalReasoningModel_ACTV1Config(BaseModel):
     halt_exploration_prob: float
 
     forward_dtype: str = "bfloat16"
-
+    
+    # CPU mode stuff
+    use_torch_attn: bool = False
 
 class HierarchicalReasoningModel_ACTV1Block(nn.Module):
     def __init__(self, config: HierarchicalReasoningModel_ACTV1Config) -> None:
