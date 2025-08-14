@@ -1,0 +1,1 @@
+OMP_NUM_THREADS=8 torchrun pretrain.py data_path=data/math-100-simple epochs=20000 eval_interval=2000 lr=1e-4 puzzle_emb_lr=1e-4 weight_decay=1.0 puzzle_emb_weight_decay=1.0
