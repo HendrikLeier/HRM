@@ -40,7 +40,7 @@ cd flash-attention/hopper
 python setup.py install
 ```
 
-For Ampere or earlier GPUs, install FlashAttenion 2
+For Ampere or earlier GPUs, install FlashAttention 2
 
 ```bash
 pip3 install flash-attn
@@ -178,7 +178,7 @@ OMP_NUM_THREADS=8 torchrun --nproc-per-node 8 evaluate.py checkpoint=<CHECKPOINT
 
 ## Citation 📜
 
-```
+```bibtex
 @misc{wang2025hierarchicalreasoningmodel,
       title={Hierarchical Reasoning Model}, 
       author={Guan Wang and Jin Li and Yuhao Sun and Xing Chen and Changling Liu and Yue Wu and Meng Lu and Sen Song and Yasin Abbasi Yadkori},
